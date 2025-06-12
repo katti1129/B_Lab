@@ -1,0 +1,81 @@
+import UIKit
+import ARKit
+
+class ViewController: UIViewController, ARSessionDelegate {
+
+    var sceneView: ARSCNView!
+    var depthLabel: UILabel! // 深度情報を表示するラベル
+    var depthRectangle: UIView!
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+
+        // ARSCNViewをセットアップ
+        sceneView = ARSCNView(frame: self.view.frame)
+        self.view.addSubview(sceneView)
+
+        // ARセッションのデリゲートを設定
+        sceneView.session.delegate = self
+
+        // ARセッションの設定
+        let configuration = ARWorldTrackingConfiguration()
+        configuration.frameSemantics = .sceneDepth
+        sceneView.session.run(configuration)
+
+        // 深度情報を表示するラベルをセットアップ
+        depthLabel = UILabel(frame: CGRect(x: 20, y: 50, width: 200, height: 50))
+        depthLabel.textColor = .white
+        depthLabel.font = UIFont.systemFont(ofSize: 24)
+        depthLabel.text = "Depth: --"
+        self.view.addSubview(depthLabel)
+        
+        
+        depthRectangle = UIView(frame: CGRect(x: self.view.frame.midX - 50, y: self.view.frame.midY - 50, width: 100, height: 100))
+        depthRectangle.layer.borderWidth = 2
+        depthRectangle.layer.borderColor = UIColor.red.cgColor
+        self.view.addSubview(depthRectangle)
+    }
+
+    // セッションでフレームが更新されるたびに呼ばれる
+    func session(_ session: ARSession, didUpdate frame: ARFrame) {
+        guard let sceneDepth = frame.sceneDepth else { return }
+
+        // 深度データを取得
+        let depthMap = sceneDepth.depthMap
+
+        CVPixelBufferLockBaseAddress(depthMap, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(depthMap, .readOnly) }
+
+        // 深度データの幅と高さを取得
+        let width = CVPixelBufferGetWidth(depthMap)
+        let height = CVPixelBufferGetHeight(depthMap)
+        let baseAddress = CVPixelBufferGetBaseAddress(depthMap)
+        let rowBytes = CVPixelBufferGetBytesPerRow(depthMap)
+
+        // 真ん中のピクセルの座標
+        let centerX = width / 2
+        let centerY = height / 2
+
+        // 真ん中周辺の領域を取得（例: 3x3ピクセル）
+        let regionSize = 3 // 中心から3x3の範囲で計測する
+        var totalDepth: Float32 = 0
+        var count = 0
+
+        for y in (centerY - regionSize / 2)..<(centerY + regionSize / 2) {
+            let rowPointer = baseAddress! + y * rowBytes
+            for x in (centerX - regionSize / 2)..<(centerX + regionSize / 2) {
+                let depthValue = rowPointer.assumingMemoryBound(to: Float32.self)[x]
+                totalDepth += depthValue
+                count += 1
+            }
+        }
+
+        // 平均深度を計算
+        let averageDepth = totalDepth / Float32(count)
+
+        // 深度情報をラベルに表示
+        DispatchQueue.main.async {
+            self.depthLabel.text = String(format: "Depth: %.2f meters", averageDepth)
+        }
+    }
+}
